@@ -1,52 +1,120 @@
 package main
 
 import (
-	"context"
 	"database/sql"
+	"flag"
 	"fmt"
 	"log"
 	"time"
 
-	"gitlab.com/rhermes/packtrack/trackers/bring"
+	"gitlab.com/rhermes/packtrack/store"
 )
 
-func trackingGenerator(out chan<- string) {
-	log.Printf("Started tracking number generator\n")
-	for i := 1000001; i < 1000015; i++ {
-		out <- fmt.Sprintf("%d", i)
+var (
+	NodeID           = flag.String("nodeid", "", "the nodeid for this node")
+	Tracker          = flag.String("tracker", "", "the name of the tracker we will be using")
+	InsertRange      = flag.Bool("range", false, "shall we use range mode?")
+	InsertRangeStart = flag.Int64("rangeStart", -1, "The start of the insert range")
+	InsertRangeEnd   = flag.Int64("rangeEnd", -1, "The end of the insert range")
+	PerformMode      = flag.Bool("perform", false, "Shall we use perform mode")
+)
+
+func insertJob(s *store.Store, tracker int, start, stop int64) error {
+	trackers := make([]int, 0)
+	args := make([][]byte, 0)
+	createdAt := make([]time.Time, 0)
+
+	for i := start; i < stop; i++ {
+		trackers = append(trackers, tracker)
+		args = append(args, []byte(fmt.Sprintf(`{"q":"%d"}`, i)))
+		createdAt = append(createdAt, time.Now())
 	}
-	log.Printf("Stopped tracking number generator\n")
+	startTime := createdAt[0]
+	endTime := createdAt[len(createdAt)-1]
+	dur := endTime.Sub(startTime)
+	log.Printf("We spent %s building internal slices.\n", dur.String())
+
+	beforeInsert := time.Now()
+	if err := s.InsertJobs(trackers, args, createdAt); err != nil {
+		return err
+	}
+	insertDur := time.Since(beforeInsert)
+	log.Printf("We spent %s inserting into postgresql.\n", insertDur.String())
+
+	return nil
+}
+
+func performJobs(s *store.Store) error {
+	for {
+		err := s.PerformJob()
+		if err != nil {
+			if err == sql.ErrNoRows {
+				log.Printf("There appears to be nothing to do, waiting 3 sec\n")
+				time.Sleep(3 * time.Second)
+			} else {
+				return err
+			}
+		}
+		time.Sleep(1 * time.Second)
+	}
+	return nil
 }
 
 func main() {
-	bc, err := bring.New(bring.Config{
-		Workers:      3,
-		InputBuffer:  2,
-		OutputBuffer: 1,
-		ErrorBuffer:  1,
-		RateLimitDur: 500 * time.Millisecond,
+	flag.Parse()
+
+	if *NodeID == "" {
+		log.Fatalf("NodeID is required\n")
+	}
+
+	if *InsertRange {
+		if *Tracker == "" {
+			log.Fatalf("A tracker is required\n")
+		}
+
+		if *InsertRangeStart == -1 || *InsertRangeEnd == -1 {
+			log.Fatalf("We need a range start and range end\n")
+		}
+		if *InsertRangeStart > *InsertRangeEnd {
+			log.Fatalf("We need a range start smaller than the range end")
+		}
+	}
+
+	s, err := store.New(store.Config{
+		NodeID:     *NodeID,
+		ConnString: "",
 	})
 	if err != nil {
-		log.Fatalf("error with opening bring: %s\n", err.Error())
+		log.Fatalf("Error opening store: %s\n", err.Error())
 	}
-	defer bc.Close()
+	defer s.Close()
 
-	db, err := sql.Open("postgres", "")
-	if err != nil {
-		log.Fatalf("error with opening database: %s\n", err.Error())
+	if *InsertRange {
+		trackers, err := s.Trackers()
+		if err != nil {
+			log.Fatalf("Error getting trackers: %s\n", err.Error())
+		}
+
+		var bt store.Tracker
+
+		for i, tracker := range trackers {
+			fmt.Printf("Tracker %d: %#v\n", i, tracker)
+			if tracker.Name == "bring" {
+				bt = tracker
+			}
+		}
+
+		if bt.ID == 0 {
+			log.Fatalf("Didn't find the tracker we needed!\n")
+		}
+
+		if err := insertJob(s, bt.ID, *InsertRangeStart, *InsertRangeEnd); err != nil {
+			log.Fatalf("Couldn't insert the tracker we needed: %s\n", err.Error())
+		}
 	}
-	defer db.Close()
-
-	if err := db.PingContext(context.Background()); err != nil {
-		log.Fatalf("Error with pinging database: %s\n", err.Error())
+	if *PerformMode {
+		if err := performJobs(s); err != nil {
+			log.Fatalf("Couldn't perform jobs: %s\n", err.Error())
+		}
 	}
-
-	cn, err := bring.NewConnector(db, bc)
-
-	if err != nil {
-		log.Fatalf("error with creating connector: %s\n", err.Error())
-	}
-	defer cn.Close()
-
-	go trackingGenerator(bc.Inputs())
 }

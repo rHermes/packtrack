@@ -5,29 +5,27 @@ CREATE TABLE IF NOT EXISTS trackers (
 	url TEXT NOT NULL
 );
 
+INSERT INTO 
+	trackers (name, description, url)
+VALUES
+	('bring', 'the norwegian postal service', 'https://developer.bring.com/')
+ON CONFLICT
+	DO NOTHING;
 
--- TODO(rHermes): Asses if we should have a work_
-CREATE TABLE IF NOT EXISTS work_items (
-	id BIGSERIAL UNIQUE NOT NULL,
-	created TIMESTAMPTZ NOT NULL,
+CREATE TABLE IF NOT EXISTS scrape_jobs (
+	id BIGSERIAL PRIMARY KEY,
 	tracker INTEGER NOT NULL REFERENCES trackers(id),
-	item TEXT NOT NULL,
-	PRIMARY KEY (created, tracker, item
+	args JSONB DEFAULT '{}',
+	status TEXT NOT NULL DEFAULT 'created',
+	created_at TIMESTAMPTZ NOT NULL,
+	start_time TIMESTAMPTZ,
+	end_time TIMESTAMPTZ,
+	stats JSONB DEFAULT '{}',
+	resp JSONB,
+	CONSTRAINT created_before_started CHECK (created_at <= start_time),
+	CONSTRAINT started_before_ended CHECK (start_time <= end_time),
+	CONSTRAINT end_must_start CHECK ( (end_time IS NULL) OR (start_time IS NOT NULL))
 );
-
-
-CREATE TABLE IF NOT EXISTS work_status (
-	node TEXT,
-	work_item BIGINT NOT NULL REFERENCSE work_items(id),
-
-	
-)
-
-CREATE TABLE IF NOT EXISTS raws (
-	ts TIMESTAMPTZ,
-	node TEXT,
-	worker TEXT,
-	work_item BIGINT NOT NULL REFERENCES work_items(id),
-	js jsonb NOT NULL,
-	PRIMARY KEY (ts, node, worker, work_item)
-);
+CREATE INDEX IF NOT EXISTS idx_scrape_jobs_status ON scrape_jobs (status);
+CREATE INDEX IF NOT EXISTS idx_scrape_jobs_created_at ON scrape_jobs (created_at);
+CREATE INDEX IF NOT EXISTS idx_scrape_jobs_end_time ON scrape_jobs (end_time);
