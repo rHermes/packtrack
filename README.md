@@ -8,3 +8,9 @@ SELECT jsonb_path_query(resp, '$.consignmentSet[*].error') as ss, count(*) as n 
 
 ## Get who has sent the most packages
 SELECT jsonb_path_query(resp, '$.consignmentSet[*].packageSet[*].brand') as brand, count(*) as n FROM scrape_jobs WHERE NOT jsonb_path_exists(resp, '$.consignmentSet[*].error') GROUP BY 1 LIMIT 100;
+
+## Get percentage of jobs done
+SELECT count(*) filter (where status <> 'created') / count(*)::numeric as per_done FROM scrape_jobs;
+
+## Number of packges sent to a country
+SELECT jsonb_path_query(resp, '$.consignmentSet[*].packageSet[*].recipientAddress.country') as country, count(*) as n FROM scrape_jobs GROUP BY 1 ORDER BY 2 DESC;

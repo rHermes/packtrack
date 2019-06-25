@@ -51,8 +51,12 @@ func performJobs(s *store.Store) error {
 			if err == sql.ErrNoRows {
 				log.Printf("There appears to be nothing to do, waiting 3 sec\n")
 				time.Sleep(3 * time.Second)
+			} else if err == store.ErrRateLimit {
+				log.Printf("We have been ratelimited, waiting 10 minutes\n")
+				time.Sleep(10 * time.Minute)
 			} else {
-				return err
+				log.Printf("There was some other error, waiting 1 minute\n")
+				time.Sleep(1 * time.Minute)
 			}
 		}
 		time.Sleep(1 * time.Second)
