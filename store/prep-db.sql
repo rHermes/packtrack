@@ -29,3 +29,4 @@ CREATE TABLE IF NOT EXISTS scrape_jobs (
 CREATE INDEX IF NOT EXISTS idx_scrape_jobs_status ON scrape_jobs (status);
 CREATE INDEX IF NOT EXISTS idx_scrape_jobs_created_at ON scrape_jobs (created_at);
 CREATE INDEX IF NOT EXISTS idx_scrape_jobs_end_time ON scrape_jobs (end_time);
+CREATE INDEX IF NOT EXISTS idx_scrape_jobs_start_time ON scrape_jobs (start_time);

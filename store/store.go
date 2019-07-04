@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/lib/pq"
 	_ "github.com/lib/pq"
 )
 
@@ -176,6 +177,12 @@ func (s *Store) Trackers() ([]Tracker, error) {
 	return trackers, nil
 }
 
+// InsertJob creates a single job
+func (s *Store) InsertJob(tracker int, args []byte, createdAt time.Time) error {
+	_, err := s.prepCreateScrapeJob.ExecContext(context.Background(), tracker, args, createdAt)
+	return err
+}
+
 // InsertJobs inserts all the jobs or non of them at all into the queue
 func (s *Store) InsertJobs(tracker []int, args [][]byte, createdAt []time.Time) error {
 	if len(tracker) != len(args) || len(args) != len(createdAt) {
@@ -188,18 +195,28 @@ func (s *Store) InsertJobs(tracker []int, args [][]byte, createdAt []time.Time) 
 	}
 	defer tx.Rollback()
 
-	pCreateScrapeJob := tx.StmtContext(context.Background(), s.prepCreateScrapeJob)
+	stmt, err := tx.Prepare(pq.CopyIn("scrape_jobs", "tracker", "args", "created_at"))
+	if err != nil {
+		return err
+	}
 
 	for i := 0; i < len(tracker); i++ {
 		if i%100 == 0 {
 			log.Printf("On insert %d of %d aka %.2f%%.\n", i, len(tracker), float64(i)/float64(len(tracker))*100)
 		}
-		_, err = pCreateScrapeJob.ExecContext(context.Background(), tracker[i], args[i], createdAt[i])
+		_, err = stmt.ExecContext(context.Background(), tracker[i], args[i], createdAt[i])
 		if err != nil {
 			return err
 		}
 	}
 
+	if _, err := stmt.Exec(); err != nil {
+		return err
+	}
+
+	if err := stmt.Close(); err != nil {
+		return err
+	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}
