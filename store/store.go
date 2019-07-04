@@ -85,11 +85,18 @@ type Tracker struct {
 	URL         string
 }
 
+// PerformStats is the statics we give back, when we finish a perform job
+type PerformStats struct {
+	NodeID string
+}
+
+// Config is used to configure a Store
 type Config struct {
 	NodeID     string
 	ConnString string
 }
 
+// Store gives the ability to create, get and perform work
 type Store struct {
 	db *sql.DB
 	id string
@@ -101,6 +108,7 @@ type Store struct {
 	prepCreateScrapeJob          *sql.Stmt
 }
 
+// New creates a new store
 func New(cfg Config) (*Store, error) {
 	db, err := sql.Open("postgres", cfg.ConnString)
 	if err != nil {
@@ -297,9 +305,15 @@ func (s *Store) PerformJob() error {
 		}
 	}
 
-	completedAt := time.Now()
+	stat := &PerformStats{NodeID: s.id}
+	statb, err := json.Marshal(stat)
+	if err != nil {
+		// TODO(rHermes): Fail the query here?
+		return err
+	}
 
-	_, err = pUpdateJob.ExecContext(context.Background(), id, "success", startedAt, completedAt, "{}", data)
+	completedAt := time.Now()
+	_, err = pUpdateJob.ExecContext(context.Background(), id, "success", startedAt, completedAt, statb, data)
 	if err != nil {
 		return err
 	}
