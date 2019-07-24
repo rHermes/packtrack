@@ -1,4 +1,4 @@
-module gitlab.com/rhermes/packtrack
+module github.com/rhermes/packtrack
 
 go 1.12
 

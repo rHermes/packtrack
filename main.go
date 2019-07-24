@@ -26,7 +26,7 @@ import (
 	"log"
 	"time"
 
-	"gitlab.com/rhermes/packtrack/store"
+	"github.com/rhermes/packtrack/store"
 )
 
 var (
